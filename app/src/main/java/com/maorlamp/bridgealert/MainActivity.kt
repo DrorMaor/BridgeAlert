@@ -1,30 +1,37 @@
 package com.maorlamp.bridgealert
 
+
 import android.Manifest.permission.ACCESS_FINE_LOCATION
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.widget.TextView
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
 
 class MainActivity : AppCompatActivity() {
     private lateinit var locationManager: LocationManager
-    private val locationListener = MyLocationListener()
-
     private lateinit var textToSpeech: TextToSpeech
+    private val handler = Handler(Looper.getMainLooper()) // Use main looper for UI updates
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
 
     val AllBridges = mutableListOf<Bridge>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         // do location permission
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -43,8 +50,32 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        startTimer()
+
         loadBridges()
-        //findBridges(44.699596444958225, -116.05178350857774)
+    }
+
+    private fun startTimer() {
+        handler.postDelayed(timerRunnable, 60000)
+    }
+
+    private val timerRunnable = object : Runnable {
+        @RequiresApi(Build.VERSION_CODES.O)
+        override fun run() {
+            getLocationUpdates()
+            handler.postDelayed(this, 60000)
+        }
+    }
+
+    private fun getLocationUpdates() {
+        val tvBridge: TextView = findViewById(R.id.tvBridge)
+        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
+            if (location != null) {
+                val latitude = location.latitude
+                val longitude = location.longitude
+                findBridges(latitude, longitude)
+            }
+        }
     }
 
     private fun startLocationUpdates() {
@@ -55,14 +86,8 @@ class MainActivity : AppCompatActivity() {
                 this,
                 android.Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
-        locationManager.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER,
-            60000,
-            0f, locationListener
         )
+            return
     }
 
     private fun checkLocationPermission(): Boolean {
@@ -71,7 +96,6 @@ class MainActivity : AppCompatActivity() {
             ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
     }
-
 
     private fun requestLocationPermission() {
         ActivityCompat.requestPermissions(
@@ -88,19 +112,8 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_LOCATION_PERMISSION) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)
                 startLocationUpdates()
-            } else {
-                // Handle permission denied case
-            }
-        }
-    }
-
-    inner class MyLocationListener : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            val latitude = location.latitude
-            val longitude = location.longitude
-            findBridges(latitude, longitude)
         }
     }
 
@@ -125,8 +138,7 @@ class MainActivity : AppCompatActivity() {
     fun soundBridges(bridges: List<Bridge>) {
         var bridgeText = ""
         for (bridge in bridges) {
-            bridgeText = "You are nearby " + bridge.Road + ", "
-            bridgeText += "passing " + bridge.Pass + ". \n"
+            bridgeText = "You are nearby " + bridge.Road + " @ " + bridge.Pass + ". \n"
             bridgeText += "Lowest rating is " + bridge.LowRate.toString() + " out of 9 \n \n"
         }
         val tvBridge: TextView = findViewById(R.id.tvBridge)
